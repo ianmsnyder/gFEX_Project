@@ -1,0 +1,113 @@
+from ROOT import *
+#gROOT.SetBatch(1)
+
+ptCuts=5
+
+minBiasHists={}
+
+minPtBin=0
+maxPtBin=20 #Max pT (100 GeV for now) divided by 5 for looping purposes
+
+for ptCut in xrange(ptCuts+1):
+    minBiasFile = TFile("gBlock"+str(ptCut)+"GeVntuples/hist-user.cylin.L1CaloSimu.MinimumBias.tag-00-00-17_OUTPUT.root")
+
+    minBiasMean=[]
+    minBiasStdDev=[]
+    
+    minBin=0
+    maxBin=20
+    nBins = maxBin-minBin
+    binLabels=[]
+    
+    for i in xrange(minPtBin, maxPtBin):
+        ptMin=5*i
+        ptMax=5+5*i
+        ptString=str(ptMin)+"_"+str(ptMax)
+        binLabels.append(ptString)
+        minBiasHists[str(ptCut)+"_"+str(ptString)] = minBiasFile.Get("postsel/event/RatiogBlockPtJetPtBinnedByJetPt"+str(ptString))
+        minBiasMean.append(minBiasHists[str(ptCut)+"_"+str(ptString)].GetMean())
+        minBiasStdDev.append(minBiasHists[str(ptCut)+"_"+str(ptString)].GetStdDev())
+        
+    minBiasStdDevHist=TH1F("minBiasStdDevHist","", nBins, minBin, maxBin)
+    minBiasMeanHist=TH1F("minBiasMeanHist","", nBins, minBin, maxBin)
+        
+    for i in xrange(minPtBin,maxPtBin):
+        minBiasStdDevHist.SetBinContent(i+1, minBiasStdDev[i])
+        minBiasMeanHist.SetBinContent(i+1, minBiasMean[i])
+
+        minBiasStdDevHist.GetXaxis().SetBinLabel(i+1, binLabels[i])
+        minBiasMeanHist.GetXaxis().SetBinLabel(i+1, binLabels[i])
+
+    MeanCanvas=TCanvas()
+    StdDevCanvas=TCanvas()
+
+    MeanCanvas.cd()
+    minBiasMeanHist.Draw()
+    minBiasMeanHist.GetXaxis().SetTitle("Offline Jet p_{T} Bin")
+    minBiasMeanHist.GetYaxis().SetTitle("Ratio Mean")
+
+    MeanCanvas.SaveAs("comparisonPlots/RatioMeangTowerPtCut"+str(ptCut)+".pdf")
+
+    StdDevCanvas.cd()
+    minBiasStdDevHist.Draw()
+    minBiasStdDevHist.GetXaxis().SetTitle("Offline Jet p_{T} Bin")
+    minBiasStdDevHist.GetYaxis().SetTitle("Ratio Standard Deviation")
+    StdDevCanvas.SaveAs("comparisonPlots/RatioStdDevgTowerPtCut"+str(ptCut)+".pdf")
+
+    del MeanCanvas, StdDevCanvas, minBiasFile, minBiasStdDevHist, minBiasMeanHist
+
+minBiasHists={}
+
+for i in xrange(minPtBin, maxPtBin):
+    ptMin=5*i
+    ptMax=5+5*i
+    ptString=str(ptMin)+"_"+str(ptMax)
+
+
+    gBlockCutsCanvas=TCanvas("gBlockCutsCanvas")
+    #gPad.DrawFrame(0., 0., 1., 1.)
+    leg=TLegend(.7, .7, .9, .9)
+    leg.SetFillColor(0)
+    leg.SetShadowColor(10)
+    leg.SetLineColor(10)
+    leg.SetFillColor(10)
+    leg.SetFillStyle(0)
+    leg.SetBorderSize(0)
+    
+    for ptCut in xrange(1):#ptCuts+1):
+        minBiasFile = TFile("gBlock"+str(ptCut)+"GeVntuples/hist-user.cylin.L1CaloSimu.MinimumBias.tag-00-00-17_OUTPUT.root")
+        minBiasHists[str(ptCut)+"_"+str(ptString)] = minBiasFile.Get("postsel/event/RatiogBlockPtJetPtBinnedByJetPt"+str(ptString))
+        #print type(minBiasFile), type(minBiasHists[str(ptCut)+"_"+str(ptString)])
+        #minBiasHists[str(ptCut)+"_"+str(ptString)].Draw()
+        nBinsHisto=minBiasHists[str(ptCut)+"_"+str(ptString)].GetSize()
+        peakBin=0.
+        print "SIze: ", nBinsHisto
+        for bI in xrange(1,nBinsHisto-1):
+            #print "Peak: ", minBiasHists[str(ptCut)+"_"+str(ptString)].GetBinContent(bI)
+            if minBiasHists[str(ptCut)+"_"+str(ptString)].GetBinContent(bI)>peakBin:
+                peakBin=minBiasHists[str(ptCut)+"_"+str(ptString)].GetBinContent(bI)
+        for bI in xrange(1,nBinsHisto-1):
+            binContent=minBiasHists[str(ptCut)+"_"+str(ptString)].GetBinContent(bI)
+            if peakBin!=0:
+                minBiasHists[str(ptCut)+"_"+str(ptString)].SetBinContent(bI, binContent/peakBin)
+            else:
+                minBiasHists[str(ptCut)+"_"+str(ptString)].SetBinContent(bI, 0)
+        #print type(minBiasHists[str(ptCut)+"_"+str(ptString)])
+        gBlockCutsCanvas.cd()
+#        minBiasHists[str(ptCut)+"_"+str(ptString)].Draw()
+        if ptCut==0:
+            minBiasHists[str(ptCut)+"_"+str(ptString)].Draw()
+            #print "first"
+        else:
+            minBiasHists[str(ptCut)+"_"+str(ptString)].Draw("same")
+            #print "others"
+        
+        minBiasHists[str(ptCut)+"_"+str(ptString)].SetLineColor(ptCut)
+
+        leg.AddEntry(minBiasHists[str(ptCut)+"_"+str(ptString)], str(ptCut)+ "GeV Cut on gTowers", "L")
+        del minBiasFile
+    leg.Draw()
+    print "About to save      comparisonPlots/pTcutsOfflineJetBin"+str(ptString)+".pdf"
+    
+    gBlockCutsCanvas.SaveAs("comparisonPlots/pTcutsOfflineJetBin"+str(ptString)+".pdf")
+    del gBlockCutsCanvas, leg

@@ -1,0 +1,366 @@
+#include <KinematicPlots/Algorithms.h>
+
+#include <algorithm>
+#include "TMath.h"
+
+void gFEX::GetJets(std::vector<Jet>& jets,
+                             int num_jets,
+                             const std::vector<float>& pt,
+                             const std::vector<float>& eta,
+                             const std::vector<float>& phi,
+                             const std::vector<float>& m,
+                             const std::vector<int>& nsj){
+
+  jets.clear();
+  for(int i=0; i < num_jets; i++){
+    gFEX::Jet new_jet(pt.at(i), eta.at(i), phi.at(i), m.at(i));
+    new_jet.area(3.14);
+    new_jet.numSubjets(nsj.empty() ? 0 : nsj.at(i));
+    jets.push_back(new_jet);
+  }
+
+  // sort in descending order
+  std::sort(jets.rbegin(), jets.rend());
+  return;
+}
+
+void gFEX::GetTowers(std::vector<Tower>& towers,
+                               int num_towers,
+                               const std::vector<float>& pt,
+                               const std::vector<float>& etaGeometric,
+                               const std::vector<float>& phiGeometric,
+                               const std::vector<float>& etaMin,
+                               const std::vector<float>& etaMax,
+                               const std::vector<float>& phiMin,
+                               const std::vector<float>& phiMax,
+                               const std::vector<float>& etaWeighted,
+                               const std::vector<float>& phiWeighted){
+  towers.clear();
+  for(int i=0; i < num_towers; i++){
+    gFEX::Tower new_tower(pt.at(i), etaGeometric.at(i), phiGeometric.at(i), etaMin.at(i), etaMax.at(i), phiMin.at(i), phiMax.at(i), etaWeighted.at(i), phiWeighted.at(i));
+    towers.push_back(new_tower);
+  }
+
+  // sort in descending order
+  std::sort(towers.rbegin(), towers.rend());
+
+  // note: towers are sorted so beware of indexing issues
+  return;
+}
+
+
+void gFEX::BuildBlocksFromTowers(std::vector<Block>& blocks,
+                                 const std::vector<Tower>& towers,
+                                 const int& blockRows,
+                                 const int& blockCols){
+  blocks.clear();
+
+  // create the grid (need to be able to grab neighbors)
+  auto grid = gFEX::TowerGrid(towers);
+
+  for(const auto& seed: towers){
+    int seedIndex = std::find(towers.begin(), towers.end(), seed) - towers.begin();
+
+    std::vector<int> neighbors = grid.neighbors(seed, blockRows, blockCols);
+    double block_area(0.0);
+    double block_pt(seed.pt());
+    double thisptCut=5000.;
+    
+    //if(std::fabs(seed.pt())>=thisptCut){
+      if(seed.pt()<0.){
+        if(seed.pt()<-thisptCut){ 
+        block_pt+=thisptCut;  //This adds the pt cut (if negative) to kill noise
+      }
+        else block_pt=0.;
+      }
+      if(seed.pt()>0.){
+        if(seed.pt()>thisptCut){ 
+            block_pt-=thisptCut;
+        }
+        else block_pt=0.;
+      }
+   
+      for(const auto& neighborTowerIndex: neighbors){
+        gFEX::Tower neighborTower = towers.at(neighborTowerIndex);
+        block_area += neighborTower.area();
+        if(std::fabs(neighborTower.pt())>=thisptCut){
+          //block_pt += neighborTower.pt(); //comment this line out 
+          
+          if(neighborTower.pt()<0.){
+            block_pt+=(neighborTower.pt()+thisptCut);//This adds the pt cut (if negative) to kill noise
+          }
+          else block_pt += (neighborTower.pt()-thisptCut); //Edit gTower ptCut here
+        }
+      }
+
+      gFEX::Block new_block(block_pt, seed.Eta(), seed.Phi(), 0.0);
+      new_block.seedIndex(seedIndex);
+      new_block.numEta(blockCols);
+      new_block.numPhi(blockRows);
+      new_block.area(block_area);
+      new_block.numConstituents(neighbors.size());
+      blocks.push_back(new_block);
+      //}
+  }
+  // sort in descending order
+  std::sort(blocks.rbegin(), blocks.rend());
+
+  return;
+}
+
+
+
+void gFEX::BuildJetsFromTowers(std::vector<Jet>& jets,
+                               const std::vector<Tower>& towers,
+                               const float& seedThreshold,
+                               const float& jetRadius,
+                               const bool& jetCenterAsSeed){
+  // first clear the jets
+  jets.clear();
+
+  // next identify towers which are seeds
+  std::vector<Tower> seeds(towers.size());
+  auto it = std::copy_if(towers.begin(), towers.end(), seeds.begin(), [&seedThreshold](gFEX::Tower tower){return tower.pt()/1.e3 >= seedThreshold;});
+  seeds.resize(std::distance(seeds.begin(), it));
+
+  // for each seed, find all towers around it and use to form the jet
+  for(const auto& match: MatchObjects(seeds, towers, jetRadius)){
+    auto seed = match.first;
+    int seedIndex = std::find(towers.begin(), towers.end(), seed) - towers.begin();
+    gFEX::FourMom_t jet_tlv(seed);
+    double area(0.0);
+    int numConstituents(0);
+    for(const auto& index: match.second){
+      auto tower = towers.at(index);
+      jet_tlv += tower;
+      area += tower.area();
+      numConstituents++;
+    }
+
+    // what do we use as center of jet?
+    double jet_eta(jet_tlv.Eta());
+    double jet_phi(jet_tlv.Phi());
+    if(jetCenterAsSeed){
+      jet_eta = seed.eta();
+      jet_phi = seed.phi();
+    }
+
+    gFEX::Jet new_jet(jet_tlv.Pt(), jet_eta, jet_phi, jet_tlv.M());
+    new_jet.seedIndex(seedIndex);
+    new_jet.area(area);
+    new_jet.numConstituents(numConstituents);
+    jets.push_back(new_jet);
+  }
+
+  std::sort(jets.rbegin(), jets.rend());
+  return;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//Returns a tower collection with SK of requested grid spacing applied   ///////
+///////////////////////////////////////////////////////////////////////////////
+double gFEX::ApplySoftKiller(std::vector<Tower>& towersSK, std::vector<Tower>& towersAll, double gridSpacing, double maxEta, bool isAbs, bool applyToOnlyPos, bool applyToAbsVal){
+  std::vector<Tower> maxTowers = GetSKGrid(towersSK, gridSpacing, maxEta, isAbs);
+  double SKCut = GetMedian(maxTowers, maxEta);
+
+  ApplyFixedCut(towersAll, SKCut, applyToAbsVal, applyToOnlyPos);
+
+  return SKCut;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Makes SK tower collection using the fake median                      ////////
+////////////////////////////////////////////////////////////////////////////////
+double gFEX::ApplyFakeSK(std::vector<Tower>& towers, double gridSpacing, double maxEta, double minPt, double maxPt, bool isAbs){
+  std::vector<Tower> maxTowers = GetSKGrid(towers, gridSpacing, maxEta, isAbs);
+  double fakeSKCut = GetFakeMedian(maxTowers, maxEta, minPt, maxPt);
+  ApplyFixedCut(towers, fakeSKCut, isAbs, false);
+
+  return fakeSKCut;
+}
+
+
+//////////////////////////////////////////////////////////////////////////
+// Cuts all towers with Pt below ptCut                            ////////
+//////////////////////////////////////////////////////////////////////////
+void gFEX::ApplyFixedCut(std::vector<Tower>& towers, double ptCut, bool isAbs, bool applyToOnlyPos){
+  std::vector<Tower>::iterator tower_itr = towers.begin();
+
+  while(tower_itr != towers.end()){
+    if(isAbs == true){
+      if(abs(tower_itr->pt()) < abs(ptCut) )  tower_itr = towers.erase(tower_itr);
+      else ++tower_itr;
+    }
+    else{
+      if(applyToOnlyPos == false){
+        if(tower_itr->pt() < ptCut) tower_itr = towers.erase(tower_itr);
+        else ++tower_itr;
+      }
+      else{
+        if(abs(tower_itr->pt()) < ptCut &&  tower_itr->pt() > 0)  tower_itr = towers.erase(tower_itr);
+        else ++tower_itr;
+      }
+    }
+  }
+
+  return;
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+// Medians are slow to calculate, so approximate the median using this method  ////
+///////////////////////////////////////////////////////////////////////////////////
+double gFEX::GetFakeMedian(std::vector<Tower>& towers, double maxEta, double min, double max){
+  double nCl = 0;
+  double sum = 0;
+
+  std::vector<Tower>::iterator tower_itr = towers.begin();
+
+  for( ; tower_itr != towers.end(); ++tower_itr){
+     if( abs(tower_itr->eta()) < maxEta && tower_itr->pt() < max && tower_itr->pt() > min){
+      sum += tower_itr->pt();
+      nCl += 1;
+    }
+  }
+  return sum / nCl;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////
+// Medians are slow to calculate, so approximate the median using this method  ////
+///////////////////////////////////////////////////////////////////////////////////
+double gFEX::GetMedian(std::vector<Tower>& towers, double maxEta){
+  std::vector<Tower> newTowers;
+
+  std::vector<Tower>::iterator tower_itr = towers.begin();
+  for( ; tower_itr != towers.end(); ++tower_itr){
+    if( abs(tower_itr->eta() ) < maxEta) newTowers.push_back(*tower_itr);
+  }
+
+
+  std::sort(newTowers.rbegin(), newTowers.rend());
+  int nBins = newTowers.size();
+  int medianBin = ceil(nBins / 2.);
+  double median = newTowers[medianBin].Pt();
+
+  return median;
+}
+
+/////////////////////////////////////////////////////////////////////////////////
+// Returns a tower collection with rho*A subtraction applied to each tower //////
+/////////////////////////////////////////////////////////////////////////////////
+void gFEX::ApplyAreaSub(std::vector<Tower>& towers_corrected,
+                        const std::vector<Tower>& towers){
+  towers_corrected.clear();
+
+  double rho = gFEX::GetRho(towers);
+  for(const auto& tower: towers){
+    double pT_correction(rho*tower.area());
+    if(tower.pt() < pT_correction) continue;
+    double ratio( 1.0 - pT_correction/tower.pt() );
+    gFEX::Tower tower_corrected(tower);
+    tower_corrected.SetPxPyPzE( tower.px()*ratio, tower.py()*ratio, tower.pz()*ratio, tower.e()*ratio);
+  }
+
+  return;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////
+//Returns a vector of the clusters that have the highest pt for each grid space ///
+//This allows easy application of the SK algorithm                              ///
+///////////////////////////////////////////////////////////////////////////////////
+std::vector<gFEX::Tower> gFEX::GetSKGrid(std::vector<Tower> towers, double gridSize, double maxEta, bool isAbs){
+    int nEtaBins = (int)( (2*maxEta) / gridSize );
+    int nPhiBins = (int) (6.3 / gridSize);
+
+    std::vector<Tower> SKMaxClusters;
+    std::vector< std::vector<Tower> > grid(nEtaBins, std::vector<Tower>(nPhiBins));
+    for(int i=0; i<nEtaBins; i++){
+      for(int j=0; j<nPhiBins; j++){
+        grid[i][j] = Tower();
+      }
+    }
+
+
+    std::vector<Tower>::iterator tower_itr = towers.begin();
+    for( ; tower_itr != towers.end(); ++tower_itr){
+      int etaBin = floor( (tower_itr->eta() + maxEta) / gridSize);
+      int phiBin = floor((tower_itr->phi() + 3.15) / gridSize);
+
+      if(etaBin < nEtaBins && etaBin >= 0 && phiBin < nPhiBins && phiBin >= 0){
+        if(isAbs == false){
+          if( tower_itr->pt() > grid[etaBin][phiBin].pt() ) grid[etaBin][phiBin] = *tower_itr;
+        }
+        else{
+          if( abs(tower_itr->pt()) > abs(grid[etaBin][phiBin].pt()) ){
+            grid[etaBin][phiBin] = *tower_itr;
+            if( grid[etaBin][phiBin].pt() < 0) grid[etaBin][phiBin].SetPt( - grid[etaBin][phiBin].pt());
+          }
+        }
+      }
+    }
+
+    for(unsigned int i=0; i<grid.size(); i++){
+      for(unsigned int j=0; j<grid[i].size(); j++){
+        SKMaxClusters.push_back(grid[i][j]);
+      }
+    }
+
+    return SKMaxClusters;
+}
+
+double gFEX::GetRho(const std::vector<Tower>& towers,
+                    const std::string& calculation_method){
+  if(calculation_method == "median"){
+    auto size = towers.size();
+    // allocate an array to hold all rho values
+    std::vector<double> rho(size, 0.0);
+    // fill the array with rho values
+
+    std::transform(towers.begin(), towers.end(), rho.begin(), [](gFEX::Tower tower) -> double { return tower.rho(); });
+    // sort so we can calculate the median
+    std::sort(rho.begin(), rho.end());
+    // identify the median
+    double median(0.0);
+    if(size % 2 == 0)
+      median = (rho[size / 2 - 1] + rho[size / 2]) / 2.0;
+    else
+      median = rho[size / 2];
+    // return it
+    return median;
+  } else if(calculation_method == "average-energy"){
+    return static_cast<double>(std::accumulate( towers.begin(), towers.end(), 0.0, [](double result, const gFEX::Tower& tower){ return (result + tower.pt()); })/towers.size());
+  }
+
+  return 0;
+}
+
+void gFEX::PileupCorrection(std::vector<Jet>& corrected_jets,
+                            const std::vector<Jet>& uncorrected_jets,
+                            const std::vector<Tower>& towers,
+                            const std::string& mitigation_method,
+                            const std::string& calculation_method){
+
+  // always empty out the vector of jets
+  corrected_jets.clear();
+
+  if(mitigation_method == "area-based"){
+    double rho = gFEX::GetRho(towers, calculation_method);
+    for(const auto& uncorrected_jet: uncorrected_jets){
+      int parentIndex = std::find(uncorrected_jets.begin(), uncorrected_jets.end(), uncorrected_jet) - uncorrected_jets.begin();
+      // copy the jet
+      gFEX::Jet corrected_jet(uncorrected_jet);
+      // correct the pt
+      corrected_jet.pt(corrected_jet.pt() - rho*corrected_jet.area());
+      // set the parent index
+      corrected_jet.parentIndex(parentIndex);
+      // add it back
+      corrected_jets.push_back(corrected_jet);
+    }
+  }
+
+  // sort in descending order
+  std::sort(corrected_jets.rbegin(), corrected_jets.rend());
+  return;
+}

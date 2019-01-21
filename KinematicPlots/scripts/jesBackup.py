@@ -1,0 +1,593 @@
+import ROOT,sys
+ROOT.gStyle.SetOptStat(0)
+
+scales = [
+  78420000*1.0240E+00/1999400,
+  78420000*6.7198E-04/1999000,
+  2433200*3.3264E-04/1994600,
+  26454*3.1963E-04/7884500,
+  254.63*5.2982E-04/7979800,
+  4.5535*9.2255E-04/7981600
+]
+
+def histAdd(a, b):
+  a.Add(b)
+  return a
+
+dijets = [ROOT.TFile.Open("hist-user.cylin.L1CaloSimu.JZ{0:d}W.tag-00-00-17_OUTPUT.root".format(i)) for i in range(6)]
+hists_list = {'gBlockEt': [], 'gBlockEt_log_pos': [], 'gBlockEt_log_neg': [], 'gBlockEtRatio': [], 'RhoGBlock_vs_RhoOJets':[], 'logAxesLinearFill1_1':[], 'logAxesLinearFill1_5':[], 'logAxesLinearFill2':[],'logAxesLinearFill2_5':[],'logAxesLogPosFill1_1':[], 'logAxesLogPosFill1_5':[], 'logAxesLogPosFill2':[],'logAxesLogPosFill2_5':[],'logAxesLogNegFill1_1':[], 'logAxesLogNegFill1_5':[], 'logAxesLogNegFill2':[],'logAxesLogNegFill2_5':[],}
+for dijet, scale in zip(dijets, scales): # Loops over files, colors, and scales respectively
+  for name in hists_list.iterkeys():
+    #print name
+    hists_list[name].append(dijet.Get("precalibration/{0:s}".format(name)))
+    hists_list[name][-1].Scale(scale*35000000)
+
+hists_list1Dpre = {'EtSigma':[]}
+for dijet, scale in zip(dijets, scales): # Loops over files, colors, and scales respectively
+  for name in hists_list1Dpre.iterkeys():
+    hists_list1Dpre[name].append(dijet.Get("precalibration/{0:s}".format(name)))
+    hists_list1Dpre[name][-1].Scale(scale*35000000)
+
+hists_list1Dpost = {'EtSigma':[]}
+for dijet, scale in zip(dijets, scales): # Loops over files, colors, and scales respectively
+  for name in hists_list1Dpost.iterkeys():
+    hists_list1Dpost[name].append(dijet.Get("postcalibration/{0:s}".format(name)))
+    hists_list1Dpost[name][-1].Scale(scale*35000000)
+
+    
+hists1Dpre = {}
+for k, v in hists_list1Dpre.iteritems():
+  hists1Dpre[k] = v[0].Clone()
+  for h in v[1:]:
+    hists1Dpre[k].Add(h)
+
+hists1Dpost = {}
+for k, v in hists_list1Dpost.iteritems():
+  hists1Dpost[k] = v[0].Clone()
+  for h in v[1:]:
+    hists1Dpost[k].Add(h)
+
+cEtSig=ROOT.TCanvas()
+cEtSig.cd()
+
+for k, v in hists1Dpost.iteritems():
+  v.Draw("hist")
+  v.SetMarkerColor(ROOT.kBlack)
+  v.SetLineColor(ROOT.kBlack)
+  v.SetMarkerSize(0.1)
+  v.GetXaxis().SetTitle("E_{T}/#rho #sqrt{A}")
+
+for k, v in hists1Dpre.iteritems():
+  v.Draw("hist same")
+  v.SetMarkerColor(ROOT.kBlue)
+  v.SetLineColor(ROOT.kBlue)
+  v.SetMarkerSize(0.1)
+  v.GetXaxis().SetTitle("E_{T}/#rho #sqrt{A}")
+cEtSig.SetLogy(1)
+cEtSig.SaveAs("EtSig_log.pdf")
+
+
+
+hists = {}
+for k, v in hists_list.iteritems():
+  hists[k] = v[0].Clone()
+  for h in v[1:]:
+    hists[k].Add(h)
+
+#calHist=hists["gBlockEt_log_pos"].Clone()
+#calHist.Fit("p0")
+
+
+print "Fit to log(1.1):  "
+
+cCal1=ROOT.TCanvas()
+cCal1.cd()
+
+line1 = ROOT.TF1("line", hists["logAxesLinearFill1_1"].Fit("pol1","F")) #line = hists["gBlockEt_log_pos"].Fit("pol1","S")
+
+
+
+line1.SetLineColor(ROOT.kRed)
+gBlockEtAll1=hists["logAxesLinearFill1_1"].Clone()
+#gBlockEtAll1.Add(hists["gBlockEt_log_neg"])
+#hists["gBlockEt_log_pos"].Draw("colz")
+#hists["gBlockEt_log_pos"].Fit("pol1", "VL")
+#line.Draw()
+
+gBlockEtAll1.Draw("colz")
+gBlockEtAll1.Fit("pol1","VL")
+
+line1=ROOT.TLine(0, .7258, 10, 8.5168)
+line1.SetLineColor(ROOT.kBlack)
+line1.Draw("same")
+cCal1.SetLogz(1)
+cCal1.SaveAs("calibration1_1pol1.pdf")
+
+
+print "Fit to log(1.5):  "
+
+cCal5=ROOT.TCanvas()
+cCal5.cd()
+
+#line5 = ROOT.TF1("line", hists["logAxesLinearFill1_5"].Fit("pol1","F")) #line = hists["gBlockEt_log_pos"].Fit("pol1","S")
+
+#line5.SetLineColor(ROOT.kRed)
+gBlockEtAll5=hists["logAxesLinearFill1_5"].Clone()
+#gBlockEtAll5.Add(hists["gBlockEt_log_neg"])
+#hists["gBlockEt_log_pos"].Draw("colz")
+#hists["gBlockEt_log_pos"].Fit("pol1", "VL")
+#line.Draw()
+
+print "Fit from 0-50:  "
+
+gBlockEtAll5.Fit("pol2","V", "", 0, 100)
+print "Fit from 50-2000: "
+gBlockEtAll5.Fit("pol1","V", "", 100, 2000)
+gBlockEtAll5.Draw("colz")
+
+
+#line5=ROOT.TLine(0, .7258, 10, 8.5168)
+#line5.SetLineColor(ROOT.kBlack)
+#line5.Draw("same")
+
+
+cCal5.SetLogz(1)
+cCal5.SaveAs("calibration1_5pol1.pdf")
+
+caltest=ROOT.TCanvas()
+gBlockEtAll5.Draw("colz")
+gBlockEtAll5.GetXaxis().SetRangeUser(0, 200)
+gBlockEtAll5.SetMinimum(-50)
+gBlockEtAll5.SetMaximum(500)
+#caltest.SaveAs("closerLook.pdf")
+sys.exit()
+
+print "Fit to log(2): "
+
+cCal2=ROOT.TCanvas()
+cCal2.cd()
+
+line2 = ROOT.TF1("line", hists["logAxesLinearFill2"].Fit("pol1","F")) #line = hists["gBlockEt_log_pos"].Fit("pol1","S")
+
+
+
+line2.SetLineColor(ROOT.kRed)
+gBlockEtAll2=hists["logAxesLinearFill2"].Clone()
+#gBlockEtAll2.Add(hists["gBlockEt_log_neg"])
+#hists["gBlockEt_log_pos"].Draw("colz")
+#hists["gBlockEt_log_pos"].Fit("pol1", "VL")
+#line.Draw()
+
+gBlockEtAll2.Draw("colz")
+gBlockEtAll2.Fit("pol1","VL")
+
+line2=ROOT.TLine(0, .7258, 10, 8.5168)
+line2.SetLineColor(ROOT.kBlack)
+line2.Draw("same")
+cCal2.SetLogz(1)
+cCal2.SaveAs("calibration2pol1.pdf")
+
+
+print "Fit to log(2.5): "
+
+cCal2_5=ROOT.TCanvas()
+cCal2_5.cd()
+
+line2_5 = ROOT.TF1("line", hists["logAxesLinearFill2_5"].Fit("pol1","F")) #line = hists["gBlockEt_log_pos"].Fit("pol1","S")
+
+line2_5.SetLineColor(ROOT.kRed)
+gBlockEtAll2_5=hists["logAxesLinearFill2_5"].Clone()
+#gBlockEtAll2.Add(hists["gBlockEt_log_neg"])
+#hists["gBlockEt_log_pos"].Draw("colz")
+#hists["gBlockEt_log_pos"].Fit("pol1", "VL")
+#line.Draw()
+
+gBlockEtAll2_5.Draw("colz")
+gBlockEtAll2_5.Fit("pol1","VL")
+
+line2_5=ROOT.TLine(0, .7258, 10, 8.5168)
+line2_5.SetLineColor(ROOT.kBlack)
+line2_5.Draw("same")
+cCal2_5.SetLogz(1)
+cCal2_5.SaveAs("calibration2_5pol1.pdf")
+
+##########################################
+
+print "Log fit to log(1.1):  "
+
+cLogCal1=ROOT.TCanvas()
+cLogCal1.cd()
+
+logLine1 = ROOT.TF1("line", hists["logAxesLogPosFill1_1"].Fit("pol1","S")) #line = hists["gBlockEt_log_pos"].Fit("pol1","S")
+
+
+
+logLine1.SetLineColor(ROOT.kRed)
+gBlockEtAll1=hists["logAxesLogPosFill1_1"].Clone()
+gBlockEtAll1.Add(hists["logAxesLogNegFill1_1"])
+#hists["gBlockEt_log_pos"].Draw("colz")
+#hists["gBlockEt_log_pos"].Fit("pol1", "VL")
+#line.Draw()
+
+gBlockEtAll1.Draw("colz")
+gBlockEtAll1.Fit("pol1","VL")
+
+logLine1=ROOT.TLine(0, .7258, 10, 8.5168)
+logLine1.SetLineColor(ROOT.kBlack)
+logLine1.Draw("same")
+cLogCal1.SetLogz(1)
+cLogCal1.SaveAs("logCalibration1_1.pdf")
+
+
+print "Log fit to log(1.5):  "
+
+cLogCal5=ROOT.TCanvas()
+cLogCal5.cd()
+
+logLine5 = ROOT.TF1("line", hists["logAxesLogPosFill1_5"].Fit("pol1","S")) #line = hists["gBlockEt_log_pos"].Fit("pol1","S")
+
+logLine5.SetLineColor(ROOT.kRed)
+gBlockEtAll5=hists["logAxesLogPosFill1_5"].Clone()
+gBlockEtAll5.Add(hists["logAxesLogNegFill1_5"])
+#hists["gBlockEt_log_pos"].Draw("colz")
+#hists["gBlockEt_log_pos"].Fit("pol1", "VL")
+#line.Draw()
+
+gBlockEtAll5.Draw("colz")
+gBlockEtAll5.Fit("pol1","VL")
+
+logLine5=ROOT.TLine(0, .7258, 10, 8.5168)
+logLine5.SetLineColor(ROOT.kBlack)
+logLine5.Draw("same")
+cLogCal5.SetLogz(1)
+cLogCal5.SaveAs("logCalibration1_5.pdf")
+
+
+print "Log fit to log(2): "
+
+cLogCal2=ROOT.TCanvas()
+cLogCal2.cd()
+
+logLine2 = ROOT.TF1("line", hists["logAxesLogPosFill2"].Fit("pol1","S")) #line = hists["gBlockEt_log_pos"].Fit("pol1","S")
+
+
+
+logLine2.SetLineColor(ROOT.kRed)
+gBlockEtAll2=hists["logAxesLogPosFill2"].Clone()
+gBlockEtAll2.Add(hists["logAxesLogNegFill2"])
+#hists["gBlockEt_log_pos"].Draw("colz")
+#hists["gBlockEt_log_pos"].Fit("pol1", "VL")
+#line.Draw()
+
+gBlockEtAll2.Draw("colz")
+gBlockEtAll2.Fit("pol1","VL")
+
+logLine2=ROOT.TLine(0, .7258, 10, 8.5168)
+logLine2.SetLineColor(ROOT.kBlack)
+logLine2.Draw("same")
+cLogCal2.SetLogz(1)
+cLogCal2.SaveAs("logCalibration2.pdf")
+
+
+print "Log fit to log(2.5): "
+
+cLogCal2_5=ROOT.TCanvas()
+cLogCal2_5.cd()
+
+logLine2_5 = ROOT.TF1("line", hists["logAxesLogPosFill2_5"].Fit("pol1","S")) #line = hists["gBlockEt_log_pos"].Fit("pol1","S")
+
+logLine2_5.SetLineColor(ROOT.kRed)
+gBlockEtAll2_5=hists["logAxesLogPosFill2_5"].Clone()
+gBlockEtAll2_5.Add(hists["logAxesLogNegFill2_5"])
+#hists["gBlockEt_log_pos"].Draw("colz")
+#hists["gBlockEt_log_pos"].Fit("pol1", "VL")
+#line.Draw()
+print "Use:"
+gBlockEtAll2_5.Draw("colz")
+gBlockEtAll2_5.Fit("pol1","VL")
+
+logLine2_5=ROOT.TLine(0, .7258, 10, 8.5168)
+logLine2_5.SetLineColor(ROOT.kBlack)
+logLine2_5.Draw("same")
+cLogCal2_5.SetLogz(1)
+cLogCal2_5.SaveAs("logCalibration2_5.pdf")
+
+sys.exit()
+    
+c = ROOT.TCanvas()
+for k, v in hists.iteritems():
+  v.Draw("hist colz")
+  p = v.ProfileX("profilex")
+  p.SetMarkerColor(ROOT.kWhite)
+  p.SetLineColor(ROOT.kWhite)
+  p.SetMarkerSize(0.1)
+  otherp = p.Clone()
+  otherp.SetMarkerColor(ROOT.kBlack)
+  otherp.SetLineColor(ROOT.kBlack)
+  otherp.SetMarkerSize(1.0)
+  otherp.Draw("same E1 C")
+  p.Draw("same E1 C")
+  c.SetLogz()
+  c.Modified()
+  c.Update()
+  c.Print("{0:s}.pdf".format(k))
+  c.Clear()
+
+h = hists['gBlockEtRatio']
+
+nbins = h.GetNbinsX()
+xlow = h.GetXaxis().GetBinLowEdge(1)
+xhigh = h.GetXaxis().GetBinLowEdge(nbins+1)
+ratio_mean = ROOT.TH1F("ratio_mean", "Mean of gBlock E_{T} / Offline p_{T}", nbins, xlow, xhigh)
+ratio_resolution_pre = ROOT.TH1F("ratio_resolution_pre", "Resolution of gBlock E_{T} / Offline p_{T}", nbins, xlow, xhigh)
+#print type(ratio_resolution_pre)
+#ratio_resolution_post = ROOT.TH1F("ratio_resolution_post", "Resolution of gBlock E_{T} / Offline p_{T}", nbins, xlow, xhigh)
+#print k
+#print type(ratio_resolution_post)
+
+ratio_mean.SetXTitle(h.GetXaxis().GetTitle())
+ratio_mean_stddev = ratio_mean.Clone()
+ratio_mean_meanerr = ratio_mean.Clone()
+
+fname = "gBlockEtRatio_projections"
+c.Print("{0:s}.pdf[".format(fname))
+for i in range(1,h.GetNbinsX()+1):
+  lowedge = h.GetXaxis().GetBinLowEdge(i)
+  highedge = h.GetXaxis().GetBinLowEdge(i+1)
+  pname = "oJetPt {0:0.1f} - {1:0.1f} [GeV]".format(lowedge, highedge)
+  projection = h.ProjectionY(pname, i, i+1)
+  projection.Draw("hist")
+  projection.SetTitle("Offline Jet p_{{T}} range: {0:0.1f}-{1:0.1f} [GeV]".format(lowedge, highedge))
+  projection.SetYTitle("counts")
+  c.Modified()
+  c.Update()
+  c.Print("{0:s}.pdf".format(fname), 'Title:{0}'.format(pname))
+  c.Clear()
+
+  mean = projection.GetMean()
+  rms = projection.GetStdDev()
+  meanerr = projection.GetMeanError()
+  if mean==0:
+    resolution=0
+    resolutionError=0
+  else:
+    resolution=rms/mean
+    resolutionError=(projection.GetStdDev() * projection.GetMeanError()) / (projection.GetMean()*projection.GetMean())
+  ratio_resolution_pre.SetBinContent(i, resolution)
+  ratio_resolution_pre.SetBinError(i, resolutionError)
+  
+  for ratio_plot in [ratio_mean, ratio_mean_stddev, ratio_mean_meanerr]:
+    ratio_plot.Fill(lowedge, mean)
+  ratio_mean.SetBinError(i, 0.0)
+  ratio_mean_stddev.SetBinError(i, rms)
+  ratio_mean_meanerr.SetBinError(i, meanerr)
+# due to a bug, you need to close with the last title
+#       even though it was written correctly, otherwise it won't save right
+c.Print("{0:s}.pdf]".format(fname), 'Title:{0}'.format(pname))
+
+ratio_mean.SetLineColor(ROOT.kGray)
+ratio_mean_stddev.SetFillColorAlpha(ROOT.kBlue, 0.5)
+ratio_mean_meanerr.SetFillColorAlpha(ROOT.kRed, 1.0)
+ratio_mean_stddev.Draw("e5")
+ratio_mean_meanerr.Draw("e5 same")
+ratio_mean.GetXaxis().SetRange(0, ratio_mean.FindLastBinAbove(0))
+ratio_mean.Draw("c hist same")
+
+l = ROOT.TLegend(.7,.7,.9,.9)
+l.SetFillColor(0)
+l.SetShadowColor(10)
+l.SetLineColor(10)
+l.SetFillColor(10)
+l.SetFillStyle(0)
+l.SetBorderSize(0)
+
+l.AddEntry(ratio_mean, "Ratio", "lf")
+l.AddEntry(ratio_mean_meanerr, "Standard Dev of Mean","f")
+l.AddEntry(ratio_mean_stddev, "Standard Dev", "f")
+l.Draw()
+
+c.SetLogx()
+c.Modified()
+c.Update()
+c.Print("{0:s}_ratioMean.pdf".format(fname))
+c.SetLogx(0)
+c.Clear()
+
+
+################
+#### Post Calibration
+###############
+
+
+#dijets = [ROOT.TFile.Open("hist-user.cylin.L1CaloSimu.JZ{0:d}W.tag-00-00-17_OUTPUT.root".format(i)) for i in range(6)]
+hists_list_post = {'gBlockEt': [], 'gBlockEt_log_pos': [], 'gBlockEt_log_neg': [], 'gBlockEtRatio': [], 'RhoGBlock_vs_RhoOJets':[]}
+for dijet, scale in zip(dijets, scales): # Loops over files, colors, and scales respectively
+  for name in hists_list_post.iterkeys():
+    hists_list_post[name].append(dijet.Get("postcalibration/{0:s}".format(name)))
+    hists_list_post[name][-1].Scale(scale*35000000)
+
+hists_post = {}
+for k, v in hists_list_post.iteritems():
+  hists_post[k] = v[0].Clone()
+  for h in v[1:]:
+    hists_post[k].Add(h)
+
+c = ROOT.TCanvas()
+for k, v in hists_post.iteritems():
+  v.Draw("hist colz")
+  p = v.ProfileX("profilex")
+  p.SetMarkerColor(ROOT.kWhite)
+  p.SetLineColor(ROOT.kWhite)
+  p.SetMarkerSize(0.1)
+  otherp = p.Clone()
+  otherp.SetMarkerColor(ROOT.kBlack)
+  otherp.SetLineColor(ROOT.kBlack)
+  otherp.SetMarkerSize(1.0)
+  otherp.Draw("same E1 C")
+  p.Draw("same E1 C")
+  c.SetLogz()
+  c.Modified()
+  c.Update()
+  c.Print("postcalibration_{0:s}.pdf".format(k))
+  c.Clear()
+
+h = hists_post['gBlockEtRatio']
+
+nbins = h.GetNbinsX()
+xlow = h.GetXaxis().GetBinLowEdge(1)
+xhigh = h.GetXaxis().GetBinLowEdge(nbins+1)
+ratio_mean = ROOT.TH1F("ratio_mean", "Mean of gBlock E_{T} / Offline p_{T}", nbins, xlow, xhigh)
+#ratio_resolution_pre = ROOT.TH1F("ratio_resolution_pre", "Resolution of gBlock E_{T} / Offline p_{T}", nbins, xlow, xhigh)
+ratio_resolution_post = ROOT.TH1F("ratio_resolution_post", "Resolution of gBlock E_{T} / Offline p_{T}", nbins, xlow, xhigh)
+
+
+
+ratio_mean.SetXTitle(h.GetXaxis().GetTitle())
+ratio_mean_stddev = ratio_mean.Clone()
+ratio_mean_meanerr = ratio_mean.Clone()
+
+fname = "gBlockEtRatio_projections"
+c.Print("{0:s}.pdf[".format(fname))
+for i in range(1,h.GetNbinsX()+1):
+  lowedge = h.GetXaxis().GetBinLowEdge(i)
+  highedge = h.GetXaxis().GetBinLowEdge(i+1)
+  pname = "oJetPt {0:0.1f} - {1:0.1f} [GeV]".format(lowedge, highedge)
+  projection = h.ProjectionY(pname, i, i+1)
+  projection.Draw("hist")
+  projection.SetTitle("Offline Jet p_{{T}} range: {0:0.1f}-{1:0.1f} [GeV]".format(lowedge, highedge))
+  projection.SetYTitle("counts")
+  c.Modified()
+  c.Update()
+  c.Print("postcalibration_{0:s}.pdf".format(fname), 'Title:{0}'.format(pname))
+  c.Clear()
+
+
+  mean = projection.GetMean()
+  rms = projection.GetStdDev()
+  meanerr = projection.GetMeanError()
+  if mean==0:
+    resolution=0
+    resolutionError=0
+  else:
+    resolution=rms/mean
+    resolutionError=(projection.GetStdDev() * projection.GetMeanError()) / (projection.GetMean()*projection.GetMean())
+  ratio_resolution_post.SetBinContent(i, resolution)
+  ratio_resolution_post.SetBinError(i, resolutionError)
+  for ratio_plot in [ratio_mean, ratio_mean_stddev, ratio_mean_meanerr]:
+    ratio_plot.Fill(lowedge, mean)
+  ratio_mean.SetBinError(i, 0.0)
+  ratio_mean_stddev.SetBinError(i, rms)
+  ratio_mean_meanerr.SetBinError(i, meanerr)
+# due to a bug, you need to close with the last title
+#       even though it was written correctly, otherwise it won't save right
+c.Print("{0:s}.pdf]".format(fname), 'Title:{0}'.format(pname))
+
+ratio_mean.SetLineColor(ROOT.kGray)
+ratio_mean_stddev.SetFillColorAlpha(ROOT.kBlue, 0.5)
+ratio_mean_meanerr.SetFillColorAlpha(ROOT.kRed, 1.0)
+ratio_mean_stddev.Draw("e5")
+ratio_mean_meanerr.Draw("e5 same")
+ratio_mean.GetXaxis().SetRange(0, ratio_mean.FindLastBinAbove(0))
+ratio_mean.Draw("c hist same")
+
+l = ROOT.TLegend(.7,.7,.9,.9)
+l.SetFillColor(0)
+l.SetShadowColor(10)
+l.SetLineColor(10)
+l.SetFillColor(10)
+l.SetFillStyle(0)
+l.SetBorderSize(0)
+
+l.AddEntry(ratio_mean, "Ratio", "lf")
+l.AddEntry(ratio_mean_meanerr, "Standard Dev of Mean","f")
+l.AddEntry(ratio_mean_stddev, "Standard Dev", "f")
+l.Draw()
+
+c.SetLogx()
+c.Modified()
+c.Update()
+c.Print("{0:s}_ratioMean.pdf".format(fname))
+c.SetLogx(0)
+c.Clear()
+
+
+
+
+
+
+print type(ratio_resolution_pre)
+
+leg = ROOT.TLegend(.7,.7,.9,.9)
+leg.SetFillColor(0)
+leg.SetShadowColor(10)
+leg.SetLineColor(10)
+leg.SetFillColor(10)
+leg.SetFillStyle(0)
+leg.SetBorderSize(0)
+leg.AddEntry(ratio_resolution_pre, "Pre-calibration", "L")
+leg.AddEntry(ratio_resolution_post, "Post-calibration", "L")
+
+
+
+c1=ROOT.TCanvas()
+c1.cd()
+ratio_resolution_pre.GetXaxis().SetRange(0, ratio_resolution_pre.FindLastBinAbove(0))
+ratio_resolution_post.GetXaxis().SetRange(0, ratio_resolution_post.FindLastBinAbove(0))
+ratio_resolution_pre.GetXaxis().SetTitle("Uncalibrated isolated Offline Jet p_{T} [GeV]")
+ratio_resolution_post.GetXaxis().SetTitle("Uncalibrated isolated Offline Jet p_{T} [GeV]")
+ratio_resolution_pre.GetYaxis().SetTitle("#sigma/mean")
+ratio_resolution_post.GetYaxis().SetTitle("#sigma/mean")
+
+ratio_resolution_pre.Draw("e1 hist")
+ratio_resolution_pre.Draw("same c hist")
+ratio_resolution_post.Draw("e1 hist same")
+ratio_resolution_post.Draw("same c hist same")
+leg.Draw()
+ratio_resolution_post.SetLineStyle(ROOT.kDashed)
+ratio_resolution_post.SetLineColor(ROOT.kRed)
+c1.Print("resolution.pdf")
+
+c2=ROOT.TCanvas()
+c2.cd()
+ratio_resolution_pre.GetXaxis().SetRange(0, ratio_resolution_pre.FindLastBinAbove(0))
+ratio_resolution_post.GetXaxis().SetRange(0, ratio_resolution_post.FindLastBinAbove(0))
+ratio_resolution_pre.Draw("c hist")
+ratio_resolution_post.Draw("c hist same")
+leg.Draw()
+ratio_resolution_post.SetLineStyle(ROOT.kDashed)
+ratio_resolution_post.SetLineColor(ROOT.kRed)
+ratio_resolution_pre.SetMinimum(0.01)
+ratio_resolution_post.SetMinimum(0.01)
+c2.SetLogy(1)
+c2.Print("resolution_log.pdf")
+
+c3=ROOT.TCanvas()
+c3.cd()
+ratio_resolution_pre.GetXaxis().SetRange(0, ratio_resolution_pre.FindLastBinAbove(0))
+ratio_resolution_post.GetXaxis().SetRange(0, ratio_resolution_post.FindLastBinAbove(0))
+ratio_resolution_pre.Draw("c hist")
+ratio_resolution_post.Draw("c hist same")
+leg.Draw()
+ratio_resolution_post.SetLineStyle(ROOT.kDashed)
+ratio_resolution_post.SetLineColor(ROOT.kRed)
+ratio_resolution_pre.SetMinimum(0.01)
+ratio_resolution_post.SetMinimum(0.01)
+c3.SetLogy(1)
+c3.SetLogx(1)
+c3.Print("resolution_logx_logy.pdf")
+
+c4=ROOT.TCanvas()
+c4.cd()
+ratio_resolution_pre.GetXaxis().SetRange(0, ratio_resolution_pre.FindLastBinAbove(0))
+ratio_resolution_post.GetXaxis().SetRange(0, ratio_resolution_post.FindLastBinAbove(0))
+ratio_resolution_pre.Draw("c hist")
+ratio_resolution_post.Draw("c hist same")
+leg.Draw()
+ratio_resolution_post.SetLineStyle(ROOT.kDashed)
+ratio_resolution_post.SetLineColor(ROOT.kRed)
+ratio_resolution_pre.SetMinimum(0.01)
+ratio_resolution_post.SetMinimum(0.01)
+c4.SetLogy(0)
+c4.SetLogx(1)
+c4.Print("resolution_logx.pdf")
+
